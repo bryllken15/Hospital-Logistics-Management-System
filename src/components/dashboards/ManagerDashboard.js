@@ -225,6 +225,8 @@ const ManagerDashboard = () => {
             icon={FileText}
             color="yellow"
             subtitle="Awaiting approval"
+            delay={100}
+            trend={{ direction: 'up', value: '+5%' }}
           />
           <StatCard
             title="Approved Requests"
@@ -232,6 +234,8 @@ const ManagerDashboard = () => {
             icon={CheckCircle}
             color="green"
             subtitle="This month"
+            delay={200}
+            trend={{ direction: 'up', value: '+15%' }}
           />
           <StatCard
             title="Active Projects"
@@ -239,6 +243,8 @@ const ManagerDashboard = () => {
             icon={TrendingUp}
             color="blue"
             subtitle="In progress"
+            delay={300}
+            trend={{ direction: 'up', value: '+3%' }}
           />
           <StatCard
             title="Total Budget"
@@ -246,63 +252,109 @@ const ManagerDashboard = () => {
             icon={BarChart3}
             color="purple"
             subtitle="All projects"
+            delay={400}
+            trend={{ direction: 'up', value: '+8%' }}
           />
         </div>
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Warehouse Stock Trend */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Warehouse Stock Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={warehouseData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="stock" stroke="#3b82f6" strokeWidth={2} />
-                <Line type="monotone" dataKey="orders" stroke="#10b981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="neumorphic-card p-8 animate-slide-in-up">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-gradient">Warehouse Stock Trend</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={warehouseData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      border: 'none',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="stock" 
+                    stroke="#3b82f6" 
+                    strokeWidth={3}
+                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
+                    activeDot={{ r: 8, stroke: '#3b82f6', strokeWidth: 2 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="orders" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
+                    activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           {/* Monthly Procurement */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Procurement Orders</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={warehouseData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="orders" fill="#8b5cf6" />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="neumorphic-card p-8 animate-slide-in-up">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-gradient">Monthly Procurement Orders</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={warehouseData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                      border: 'none',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Bar 
+                    dataKey="orders" 
+                    fill="url(#colorGradient)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <defs>
+                    <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8b5cf6" />
+                      <stop offset="100%" stopColor="#a855f7" />
+                    </linearGradient>
+                  </defs>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Procurement Requests */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Procurement Approval Requests</h2>
+          <div className="animate-slide-in-left">
             <DataTable
               data={procurementRequests}
               columns={procurementColumns}
               actions={procurementActions}
               searchable={true}
               itemsPerPage={5}
+              title="Procurement Approval Requests"
+              showExport={true}
             />
           </div>
 
           {/* Project Status */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Project Logistics Status</h2>
+          <div className="animate-slide-in-right">
             <DataTable
               data={projects}
               columns={projectColumns}
               searchable={true}
               itemsPerPage={5}
+              title="Project Logistics Status"
+              showExport={true}
             />
           </div>
         </div>
