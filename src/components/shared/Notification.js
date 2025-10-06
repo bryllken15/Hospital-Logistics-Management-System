@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react';
 
 const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
@@ -89,7 +89,6 @@ const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
 };
 
 // Notification Context
-import { createContext, useContext } from 'react';
 
 const NotificationContext = createContext();
 

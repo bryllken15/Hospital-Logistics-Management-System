@@ -291,6 +291,8 @@ const EmployeeDashboard = () => {
             icon={Package}
             color="blue"
             subtitle="In inventory"
+            delay={100}
+            trend={{ direction: 'up', value: '+7%' }}
           />
           <StatCard
             title="Low Stock"
@@ -298,6 +300,8 @@ const EmployeeDashboard = () => {
             icon={AlertTriangle}
             color="yellow"
             subtitle="Need restocking"
+            delay={200}
+            trend={{ direction: 'down', value: '-2%' }}
           />
           <StatCard
             title="Critical Low"
@@ -305,6 +309,8 @@ const EmployeeDashboard = () => {
             icon={PackageOpen}
             color="red"
             subtitle="Urgent restock"
+            delay={300}
+            trend={{ direction: 'down', value: '-1%' }}
           />
           <StatCard
             title="Deliveries"
@@ -312,6 +318,8 @@ const EmployeeDashboard = () => {
             icon={Truck}
             color="green"
             subtitle="This week"
+            delay={400}
+            trend={{ direction: 'up', value: '+12%' }}
           />
         </div>
 
@@ -436,25 +444,27 @@ const EmployeeDashboard = () => {
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Inventory Table */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Inventory Overview</h2>
+          <div className="animate-slide-in-left">
             <DataTable
               data={inventory}
               columns={inventoryColumns}
               actions={inventoryActions}
               searchable={true}
               itemsPerPage={8}
+              title="Inventory Overview"
+              showExport={true}
             />
           </div>
 
           {/* Delivery Logs */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Delivery Logs</h2>
+          <div className="animate-slide-in-right">
             <DataTable
               data={deliveries}
               columns={deliveryColumns}
               searchable={true}
               itemsPerPage={8}
+              title="Delivery Logs"
+              showExport={true}
             />
           </div>
         </div>

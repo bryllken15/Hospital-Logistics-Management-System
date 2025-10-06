@@ -206,6 +206,8 @@ const AdminDashboard = () => {
             icon={Users}
             color="blue"
             subtitle="All registered users"
+            delay={100}
+            trend={{ direction: 'up', value: '+12%' }}
           />
           <StatCard
             title="Active Users"
@@ -213,6 +215,8 @@ const AdminDashboard = () => {
             icon={UserCheck}
             color="green"
             subtitle="Currently active"
+            delay={200}
+            trend={{ direction: 'up', value: '+8%' }}
           />
           <StatCard
             title="Inactive Users"
@@ -220,6 +224,8 @@ const AdminDashboard = () => {
             icon={UserX}
             color="red"
             subtitle="Deactivated accounts"
+            delay={300}
+            trend={{ direction: 'down', value: '-3%' }}
           />
           <StatCard
             title="Recent Activities"
@@ -227,22 +233,29 @@ const AdminDashboard = () => {
             icon={Activity}
             color="purple"
             subtitle="Last 24 hours"
+            delay={400}
+            trend={{ direction: 'up', value: '+25%' }}
           />
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="neumorphic-card p-8 animate-slide-in-up">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-gradient">Quick Actions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <button 
               onClick={() => {
                 loadData();
                 showSuccess('Data refreshed successfully!');
               }}
-              className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              className="neumorphic-button p-6 text-center hover:scale-105 transition-all duration-300 group"
             >
-              <Activity className="h-6 w-6 text-gray-400 mr-2" />
-              <span className="text-gray-600">Refresh Data</span>
+              <div className="flex flex-col items-center space-y-3">
+                <div className="p-4 bg-blue-100 rounded-xl group-hover:bg-blue-200 transition-colors duration-300">
+                  <Activity className="h-8 w-8 text-blue-600" />
+                </div>
+                <span className="text-gray-700 font-semibold">Refresh Data</span>
+                <p className="text-xs text-gray-500">Update all information</p>
+              </div>
             </button>
             <button 
               onClick={() => {
@@ -255,10 +268,15 @@ const AdminDashboard = () => {
                 };
                 showInfo(`System Settings: ${Object.entries(settings).map(([key, value]) => `${key}: ${value}`).join(', ')}`);
               }}
-              className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 hover:bg-green-50 transition-colors"
+              className="neumorphic-button p-6 text-center hover:scale-105 transition-all duration-300 group"
             >
-              <Settings className="h-6 w-6 text-gray-400 mr-2" />
-              <span className="text-gray-600">System Settings</span>
+              <div className="flex flex-col items-center space-y-3">
+                <div className="p-4 bg-green-100 rounded-xl group-hover:bg-green-200 transition-colors duration-300">
+                  <Settings className="h-8 w-8 text-green-600" />
+                </div>
+                <span className="text-gray-700 font-semibold">System Settings</span>
+                <p className="text-xs text-gray-500">Configure system</p>
+              </div>
             </button>
             <button 
               onClick={() => {
@@ -275,42 +293,53 @@ const AdminDashboard = () => {
                   showInfo('No recent security events found.');
                 }
               }}
-              className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors"
+              className="neumorphic-button p-6 text-center hover:scale-105 transition-all duration-300 group"
             >
-              <Shield className="h-6 w-6 text-gray-400 mr-2" />
-              <span className="text-gray-600">Security Logs</span>
+              <div className="flex flex-col items-center space-y-3">
+                <div className="p-4 bg-purple-100 rounded-xl group-hover:bg-purple-200 transition-colors duration-300">
+                  <Shield className="h-8 w-8 text-purple-600" />
+                </div>
+                <span className="text-gray-700 font-semibold">Security Logs</span>
+                <p className="text-xs text-gray-500">View security events</p>
+              </div>
             </button>
             <button 
               onClick={() => setShowAnnouncement(true)}
-              className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 transition-colors"
+              className="neumorphic-button p-6 text-center hover:scale-105 transition-all duration-300 group"
             >
-              <MessageSquare className="h-6 w-6 text-gray-400 mr-2" />
-              <span className="text-gray-600">Announcement</span>
+              <div className="flex flex-col items-center space-y-3">
+                <div className="p-4 bg-indigo-100 rounded-xl group-hover:bg-indigo-200 transition-colors duration-300">
+                  <MessageSquare className="h-8 w-8 text-indigo-600" />
+                </div>
+                <span className="text-gray-700 font-semibold">Announcement</span>
+                <p className="text-xs text-gray-500">Create announcement</p>
+              </div>
             </button>
           </div>
         </div>
 
         {/* User Management */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">User Management</h2>
+          <div className="animate-slide-in-left">
             <DataTable
               data={users}
               columns={userColumns}
               actions={userActions}
               searchable={true}
               itemsPerPage={5}
+              title="User Management"
+              showExport={true}
             />
           </div>
 
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent System Activities</h2>
+          <div className="animate-slide-in-right">
             <DataTable
               data={activities.slice(0, 10)}
               columns={activityColumns}
               searchable={true}
               pagination={false}
-              className="h-96"
+              title="Recent System Activities"
+              showExport={true}
             />
           </div>
         </div>
