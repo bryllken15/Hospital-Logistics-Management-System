@@ -7,9 +7,9 @@ import DataTable from '../shared/DataTable';
 import { LoadingSkeleton, DashboardSkeleton } from '../shared/LoadingSkeleton';
 import DatabaseConnectionTest from '../shared/DatabaseConnectionTest';
 import DatabaseDiagnosticModal from '../shared/DatabaseDiagnosticModal';
-import { UserService } from '../../services/database/users';
-import { ActivityService } from '../../services/database/activities';
-import { RealtimeService } from '../../services/database/realtime';
+import { userService } from '../../services/database/users';
+import { activityService } from '../../services/database/activities';
+import { realtimeService } from '../../services/database/realtime';
 import {
   Users,
   UserCheck,
@@ -57,9 +57,9 @@ const AdminDashboard = () => {
   });
 
   // Initialize services
-  const userService = useRef(new UserService());
-  const activityService = useRef(new ActivityService());
-  const realtimeService = useRef(new RealtimeService());
+  const userServiceRef = useRef(userService);
+  const activityServiceRef = useRef(activityService);
+  const realtimeServiceRef = useRef(realtimeService);
   const subscriptions = useRef([]);
 
   const loadData = useCallback(async () => {
@@ -71,8 +71,8 @@ const AdminDashboard = () => {
       if (useDatabase) {
         // Use database services
         const [usersResult, activitiesResult] = await Promise.all([
-          userService.current.getAllUsers(),
-          activityService.current.getRecentActivities(100)
+          userServiceRef.current.getAllUsers(),
+          activityServiceRef.current.getRecentActivities(100)
         ]);
         
         if (usersResult.error) {
@@ -137,7 +137,7 @@ const AdminDashboard = () => {
     subscriptions.current = [];
 
     // Subscribe to users table changes
-    const usersSub = realtimeService.current.subscribe('users', (payload) => {
+    const usersSub = realtimeServiceRef.current.subscribe('users', (payload) => {
       console.log('Users table updated:', payload);
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
         loadData(); // Reload data when users change
@@ -146,7 +146,7 @@ const AdminDashboard = () => {
     });
 
     // Subscribe to system activities
-    const activitiesSub = realtimeService.current.subscribe('system_activities', (payload) => {
+    const activitiesSub = realtimeServiceRef.current.subscribe('system_activities', (payload) => {
       console.log('System activities updated:', payload);
       if (payload.eventType === 'INSERT') {
         // Add new activity to the list
@@ -156,7 +156,7 @@ const AdminDashboard = () => {
     });
 
     // Subscribe to notifications for admin
-    const notificationsSub = realtimeService.current.subscribe('notifications', (payload) => {
+    const notificationsSub = realtimeServiceRef.current.subscribe('notifications', (payload) => {
       console.log('Notifications updated:', payload);
       if (payload.eventType === 'INSERT') {
         showInfo('New notification received');
@@ -196,7 +196,7 @@ const AdminDashboard = () => {
       
       if (useDatabase) {
         // Use database service
-        const result = await userService.current.updateUserStatusByUsername(username, newStatus);
+        const result = await userServiceRef.current.updateUserStatusByUsername(username, newStatus);
         if (result.error) {
           throw new Error(result.error.message);
         }

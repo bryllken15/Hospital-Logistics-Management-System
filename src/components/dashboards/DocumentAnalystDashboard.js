@@ -4,7 +4,7 @@ import { useNotification } from '../shared/Notification';
 import DashboardLayout from '../shared/DashboardLayout';
 import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
-import { documentsService } from '../../services/database/documents';
+import { documentService } from '../../services/database/documents';
 import { 
   FileText, 
   Upload, 
@@ -53,7 +53,7 @@ const DocumentAnalystDashboard = () => {
     try {
       if (useDatabase) {
         // Load documents
-        const documentsResult = await documentsService.getAllDocuments();
+        const documentsResult = await documentService.getAllDocuments();
         if (documentsResult.error) {
           console.error('Error loading documents:', documentsResult.error);
           showError('Failed to load documents');
@@ -62,7 +62,7 @@ const DocumentAnalystDashboard = () => {
         }
 
         // Load delivery receipts
-        const receiptsResult = await documentsService.getAllDeliveryReceipts();
+        const receiptsResult = await documentService.getAllDeliveryReceipts();
         if (receiptsResult.error) {
           console.error('Error loading delivery receipts:', receiptsResult.error);
           showError('Failed to load delivery receipts');
@@ -71,7 +71,7 @@ const DocumentAnalystDashboard = () => {
         }
 
         // Load verification queue
-        const queueResult = await documentsService.getVerificationQueue();
+        const queueResult = await documentService.getVerificationQueue();
         if (queueResult.error) {
           console.error('Error loading verification queue:', queueResult.error);
         } else {
@@ -103,7 +103,7 @@ const DocumentAnalystDashboard = () => {
     subscriptions.current = [];
 
     // Subscribe to documents
-    const documentsSub = documentsService.subscribeToDocuments((payload) => {
+    const documentsSub = documentService.subscribeToDocuments((payload) => {
       console.log('Documents updated:', payload);
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
         loadData();
@@ -112,7 +112,7 @@ const DocumentAnalystDashboard = () => {
     });
 
     // Subscribe to delivery receipts
-    const receiptsSub = documentsService.subscribeToDeliveryReceipts((payload) => {
+    const receiptsSub = documentService.subscribeToDeliveryReceipts((payload) => {
       console.log('Delivery receipts updated:', payload);
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
         loadData();
@@ -258,7 +258,7 @@ const DocumentAnalystDashboard = () => {
           tags: []
         };
 
-        const result = await documentsService.createDocument(documentData);
+        const result = await documentService.createDocument(documentData);
         if (result.error) {
           throw new Error(result.error.message);
         }
@@ -294,7 +294,7 @@ const DocumentAnalystDashboard = () => {
   const handleVerifyDocument = async (documentId, action) => {
     try {
       if (useDatabase) {
-        const result = await documentsService.updateDocumentStatus(
+        const result = await documentService.updateDocumentStatus(
           documentId, 
           action === 'approve' ? 'verified' : 'rejected',
           user.id

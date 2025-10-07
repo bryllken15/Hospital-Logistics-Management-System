@@ -6,9 +6,9 @@ import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
 import NotificationCenter from '../shared/NotificationCenter';
 import { LoadingSkeleton, DashboardSkeleton } from '../shared/LoadingSkeleton';
-import { ProjectService } from '../../services/database/projects';
-import { WorkflowService } from '../../services/database/workflows';
-import { RealtimeService } from '../../services/database/realtime';
+import { projectService } from '../../services/database/projects';
+import { workflowService } from '../../services/database/workflows';
+import { realtimeService } from '../../services/database/realtime';
 import { WorkflowEngine } from '../../services/workflow/WorkflowEngine';
 import { NotificationService } from '../../services/notifications/NotificationService';
 import { 
@@ -70,10 +70,10 @@ const ProjectManagerDashboard = () => {
   });
 
   // Initialize services
-  const projectService = useRef(new ProjectService());
-  const workflowService = useRef(new WorkflowService());
+  const projectServiceRef = useRef(projectService);
+  const workflowServiceRef = useRef(workflowService);
   const workflowEngine = useRef(new WorkflowEngine());
-  const realtimeService = useRef(new RealtimeService());
+  const realtimeServiceRef = useRef(realtimeService);
   const notificationService = useRef(new NotificationService());
   const subscriptions = useRef([]);
 
@@ -97,7 +97,7 @@ const ProjectManagerDashboard = () => {
       
       if (useDatabase) {
         // Load projects from database
-        const projectsResult = await projectService.current.getAllProjects();
+        const projectsResult = await projectServiceRef.current.getAllProjects();
         if (projectsResult.error) {
           console.error('Error loading projects:', projectsResult.error);
           showError('Failed to load projects data');
@@ -279,7 +279,7 @@ const ProjectManagerDashboard = () => {
     subscriptions.current = [];
 
     // Subscribe to projects changes
-    const projectsSub = realtimeService.current.subscribe('projects', (payload) => {
+    const projectsSub = realtimeServiceRef.current.subscribe('projects', (payload) => {
       console.log('Projects table updated:', payload);
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
         loadData();
@@ -288,7 +288,7 @@ const ProjectManagerDashboard = () => {
     });
 
     // Subscribe to workflow instances for pending approvals
-    const workflowSub = realtimeService.current.subscribe('workflow_instances', (payload) => {
+    const workflowSub = realtimeServiceRef.current.subscribe('workflow_instances', (payload) => {
       console.log('Workflow instances updated:', payload);
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         loadData();
@@ -297,7 +297,7 @@ const ProjectManagerDashboard = () => {
     });
 
     // Subscribe to notifications
-    const notificationsSub = realtimeService.current.subscribe('notifications', (payload) => {
+    const notificationsSub = realtimeServiceRef.current.subscribe('notifications', (payload) => {
       console.log('Notifications updated:', payload);
       if (payload.eventType === 'INSERT') {
         showInfo('New notification received');
@@ -327,7 +327,7 @@ const ProjectManagerDashboard = () => {
           created_by: user.id
         };
 
-        const result = await projectService.current.createProject(projectData);
+        const result = await projectServiceRef.current.createProject(projectData);
         if (result.error) {
           throw new Error(result.error.message);
         }
