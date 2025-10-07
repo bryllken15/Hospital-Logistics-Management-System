@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../shared/Notification';
 import DashboardLayout from '../shared/DashboardLayout';
 import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
+import { documentsService } from '../../services/database/documents';
 import { 
   FileText, 
   Upload, 
@@ -11,15 +13,18 @@ import {
   Archive,
   Eye,
   Download,
-  Search
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const DocumentAnalystDashboard = () => {
-  const { user, logActivity } = useAuth();
+  const { user, logActivity, useDatabase } = useAuth();
+  const { showSuccess, showError, showInfo } = useNotification();
   const [documents, setDocuments] = useState([]);
   const [deliveryReceipts, setDeliveryReceipts] = useState([]);
   const [verificationQueue, setVerificationQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [newDocument, setNewDocument] = useState({
     name: '',
@@ -28,9 +33,96 @@ const DocumentAnalystDashboard = () => {
     description: ''
   });
 
+  const subscriptions = useRef([]);
+
   useEffect(() => {
-    loadMockData();
-  }, []);
+    loadData();
+    setupRealTimeSubscriptions();
+    
+    return () => {
+      subscriptions.current.forEach(sub => {
+        if (sub && sub.unsubscribe) {
+          sub.unsubscribe();
+        }
+      });
+    };
+  }, [useDatabase]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (useDatabase) {
+        // Load documents
+        const documentsResult = await documentsService.getAllDocuments();
+        if (documentsResult.error) {
+          console.error('Error loading documents:', documentsResult.error);
+          showError('Failed to load documents');
+        } else {
+          setDocuments(documentsResult.data || []);
+        }
+
+        // Load delivery receipts
+        const receiptsResult = await documentsService.getAllDeliveryReceipts();
+        if (receiptsResult.error) {
+          console.error('Error loading delivery receipts:', receiptsResult.error);
+          showError('Failed to load delivery receipts');
+        } else {
+          setDeliveryReceipts(receiptsResult.data || []);
+        }
+
+        // Load verification queue
+        const queueResult = await documentsService.getVerificationQueue();
+        if (queueResult.error) {
+          console.error('Error loading verification queue:', queueResult.error);
+        } else {
+          setVerificationQueue(queueResult.data || []);
+        }
+      } else {
+        // Fallback to mock data when database is not available
+        loadMockData();
+      }
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      showError('Failed to load dashboard data');
+      // Fallback to mock data
+      loadMockData();
+    } finally {
+      setLoading(false);
+    }
+  }, [useDatabase, showError]);
+
+  const setupRealTimeSubscriptions = useCallback(() => {
+    if (!useDatabase) return;
+
+    // Clean up existing subscriptions
+    subscriptions.current.forEach(sub => {
+      if (sub && sub.unsubscribe) {
+        sub.unsubscribe();
+      }
+    });
+    subscriptions.current = [];
+
+    // Subscribe to documents
+    const documentsSub = documentsService.subscribeToDocuments((payload) => {
+      console.log('Documents updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Documents updated in real-time');
+      }
+    });
+
+    // Subscribe to delivery receipts
+    const receiptsSub = documentsService.subscribeToDeliveryReceipts((payload) => {
+      console.log('Delivery receipts updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Delivery receipts updated in real-time');
+      }
+    });
+
+    if (documentsSub) subscriptions.current.push(documentsSub);
+    if (receiptsSub) subscriptions.current.push(receiptsSub);
+  }, [useDatabase, loadData, showInfo]);
 
   const loadMockData = () => {
     // Mock documents data
@@ -150,45 +242,93 @@ const DocumentAnalystDashboard = () => {
     ]);
   };
 
-  const handleUploadDocument = (e) => {
+  const handleUploadDocument = async (e) => {
     e.preventDefault();
-    const document = {
-      id: documents.length + 1,
-      ...newDocument,
-      status: 'pending_verification',
-      uploadedDate: new Date().toISOString().split('T')[0],
-      uploadedBy: user.username,
-      verifiedBy: null,
-      verifiedDate: null,
-      fileSize: '1.2 MB',
-      tags: []
-    };
-    
-    setDocuments(prev => [document, ...prev]);
-    setNewDocument({ name: '', type: '', category: '', description: '' });
-    setShowUploadModal(false);
-    
-    logActivity(user.username, 'DOCUMENT_UPLOAD', `Uploaded document: ${document.name}`);
+    try {
+      if (useDatabase) {
+        const documentData = {
+          name: newDocument.name,
+          document_type: newDocument.type,
+          category: newDocument.category,
+          description: newDocument.description,
+          status: 'pending_verification',
+          uploaded_date: new Date().toISOString().split('T')[0],
+          uploaded_by: user.id,
+          file_size: '1.2 MB',
+          tags: []
+        };
+
+        const result = await documentsService.createDocument(documentData);
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        showSuccess('Document uploaded successfully');
+      } else {
+        // Fallback to local state
+        const document = {
+          id: documents.length + 1,
+          ...newDocument,
+          status: 'pending_verification',
+          uploadedDate: new Date().toISOString().split('T')[0],
+          uploadedBy: user.username,
+          verifiedBy: null,
+          verifiedDate: null,
+          fileSize: '1.2 MB',
+          tags: []
+        };
+        
+        setDocuments(prev => [document, ...prev]);
+      }
+      
+      setNewDocument({ name: '', type: '', category: '', description: '' });
+      setShowUploadModal(false);
+      
+      await logActivity(user.username, 'DOCUMENT_UPLOAD', `Uploaded document: ${newDocument.name}`);
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      showError('Failed to upload document');
+    }
   };
 
-  const handleVerifyDocument = (documentId, action) => {
-    setDocuments(prev => 
-      prev.map(doc => 
-        doc.id === documentId 
-          ? { 
-              ...doc, 
-              status: action === 'approve' ? 'verified' : 'rejected',
-              verifiedBy: user.username,
-              verifiedDate: new Date().toISOString().split('T')[0]
-            }
-          : doc
-      )
-    );
-    
-    const document = documents.find(doc => doc.id === documentId);
-    logActivity(user.username, 'DOCUMENT_VERIFY', 
-      `${action === 'approve' ? 'Verified' : 'Rejected'} document: ${document?.name}`
-    );
+  const handleVerifyDocument = async (documentId, action) => {
+    try {
+      if (useDatabase) {
+        const result = await documentsService.updateDocumentStatus(
+          documentId, 
+          action === 'approve' ? 'verified' : 'rejected',
+          user.id
+        );
+        
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        showSuccess(`Document ${action === 'approve' ? 'verified' : 'rejected'} successfully`);
+      } else {
+        // Fallback to local state
+        setDocuments(prev => 
+          prev.map(doc => 
+            doc.id === documentId 
+              ? { 
+                  ...doc, 
+                  status: action === 'approve' ? 'verified' : 'rejected',
+                  verifiedBy: user.username,
+                  verifiedDate: new Date().toISOString().split('T')[0]
+                }
+              : doc
+          )
+        );
+      }
+      
+      const document = documents.find(doc => doc.id === documentId);
+      await logActivity(user.username, 'DOCUMENT_VERIFY', 
+        `${action === 'approve' ? 'Verified' : 'Rejected'} document: ${document?.name}`
+      );
+    } catch (error) {
+      console.error('Error verifying document:', error);
+      showError('Failed to verify document');
+    }
   };
 
   const handleArchiveDocument = (documentId) => {
@@ -352,6 +492,30 @@ const DocumentAnalystDashboard = () => {
       subtitle="Document Management & Verification"
     >
       <div className="space-y-8">
+        {/* Refresh Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => {
+              loadData();
+              showSuccess('Data refreshed successfully!');
+            }}
+            disabled={loading}
+            className="neumorphic-button p-3 text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh data"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {/* Loading State */}
+        {loading && (
+          <div className="neumorphic-card p-8 text-center">
+            <div className="flex items-center justify-center space-x-4">
+              <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              <span className="text-lg font-semibold text-gray-700">Loading document data...</span>
+            </div>
+          </div>
+        )}
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard

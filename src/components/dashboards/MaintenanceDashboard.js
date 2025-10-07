@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../shared/Notification';
 import DashboardLayout from '../shared/DashboardLayout';
 import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
 import RFIDScanner from '../shared/RFIDScanner';
+import { maintenanceService } from '../../services/database/maintenance';
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -13,15 +15,18 @@ import {
   Calendar,
   Settings,
   Package,
-  TrendingUp
+  TrendingUp,
+  RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const MaintenanceDashboard = () => {
-  const { user, logActivity } = useAuth();
+  const { user, logActivity, useDatabase } = useAuth();
+  const { showSuccess, showError, showInfo } = useNotification();
   const [assets, setAssets] = useState([]);
   const [maintenanceLogs, setMaintenanceLogs] = useState([]);
   const [scheduledMaintenance, setScheduledMaintenance] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAddMaintenance, setShowAddMaintenance] = useState(false);
   const [newMaintenance, setNewMaintenance] = useState({
     assetId: '',
@@ -31,9 +36,96 @@ const MaintenanceDashboard = () => {
     estimatedDuration: ''
   });
 
+  const subscriptions = useRef([]);
+
   useEffect(() => {
-    loadMockData();
-  }, []);
+    loadData();
+    setupRealTimeSubscriptions();
+    
+    return () => {
+      subscriptions.current.forEach(sub => {
+        if (sub && sub.unsubscribe) {
+          sub.unsubscribe();
+        }
+      });
+    };
+  }, [useDatabase]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (useDatabase) {
+        // Load assets
+        const assetsResult = await maintenanceService.getAllAssets();
+        if (assetsResult.error) {
+          console.error('Error loading assets:', assetsResult.error);
+          showError('Failed to load assets');
+        } else {
+          setAssets(assetsResult.data || []);
+        }
+
+        // Load maintenance logs
+        const logsResult = await maintenanceService.getAllMaintenanceLogs();
+        if (logsResult.error) {
+          console.error('Error loading maintenance logs:', logsResult.error);
+          showError('Failed to load maintenance logs');
+        } else {
+          setMaintenanceLogs(logsResult.data || []);
+        }
+
+        // Load scheduled maintenance
+        const scheduledResult = await maintenanceService.getScheduledMaintenance();
+        if (scheduledResult.error) {
+          console.error('Error loading scheduled maintenance:', scheduledResult.error);
+        } else {
+          setScheduledMaintenance(scheduledResult.data || []);
+        }
+      } else {
+        // Fallback to mock data when database is not available
+        loadMockData();
+      }
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      showError('Failed to load dashboard data');
+      // Fallback to mock data
+      loadMockData();
+    } finally {
+      setLoading(false);
+    }
+  }, [useDatabase, showError]);
+
+  const setupRealTimeSubscriptions = useCallback(() => {
+    if (!useDatabase) return;
+
+    // Clean up existing subscriptions
+    subscriptions.current.forEach(sub => {
+      if (sub && sub.unsubscribe) {
+        sub.unsubscribe();
+      }
+    });
+    subscriptions.current = [];
+
+    // Subscribe to assets
+    const assetsSub = maintenanceService.subscribeToAssets((payload) => {
+      console.log('Assets updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Assets updated in real-time');
+      }
+    });
+
+    // Subscribe to maintenance logs
+    const logsSub = maintenanceService.subscribeToMaintenanceLogs((payload) => {
+      console.log('Maintenance logs updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Maintenance logs updated in real-time');
+      }
+    });
+
+    if (assetsSub) subscriptions.current.push(assetsSub);
+    if (logsSub) subscriptions.current.push(logsSub);
+  }, [useDatabase, loadData, showInfo]);
 
   const loadMockData = () => {
     // Mock assets data
@@ -191,27 +283,56 @@ const MaintenanceDashboard = () => {
     }
   };
 
-  const handleAddMaintenance = (e) => {
+  const handleAddMaintenance = async (e) => {
     e.preventDefault();
-    const asset = assets.find(a => a.id === parseInt(newMaintenance.assetId));
-    const maintenance = {
-      id: maintenanceLogs.length + 1,
-      assetId: parseInt(newMaintenance.assetId),
-      assetName: asset?.name || '',
-      type: newMaintenance.type,
-      description: newMaintenance.description,
-      performedBy: user.username,
-      date: new Date().toISOString().split('T')[0],
-      duration: parseInt(newMaintenance.estimatedDuration),
-      status: 'scheduled',
-      cost: 0
-    };
-    
-    setMaintenanceLogs(prev => [maintenance, ...prev]);
-    setNewMaintenance({ assetId: '', type: '', description: '', priority: '', estimatedDuration: '' });
-    setShowAddMaintenance(false);
-    
-    logActivity(user.username, 'MAINTENANCE_SCHEDULE', `Scheduled maintenance for ${asset?.name}`);
+    try {
+      if (useDatabase) {
+        const asset = assets.find(a => a.id === parseInt(newMaintenance.assetId));
+        const maintenanceData = {
+          asset_id: parseInt(newMaintenance.assetId),
+          maintenance_type: newMaintenance.type,
+          description: newMaintenance.description,
+          priority: newMaintenance.priority,
+          estimated_duration: parseInt(newMaintenance.estimatedDuration),
+          status: 'scheduled',
+          scheduled_date: new Date().toISOString().split('T')[0],
+          performed_by: user.id,
+          cost: 0
+        };
+
+        const result = await maintenanceService.createMaintenanceLog(maintenanceData);
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        showSuccess('Maintenance scheduled successfully');
+      } else {
+        // Fallback to local state
+        const asset = assets.find(a => a.id === parseInt(newMaintenance.assetId));
+        const maintenance = {
+          id: maintenanceLogs.length + 1,
+          assetId: parseInt(newMaintenance.assetId),
+          assetName: asset?.name || '',
+          type: newMaintenance.type,
+          description: newMaintenance.description,
+          performedBy: user.username,
+          date: new Date().toISOString().split('T')[0],
+          duration: parseInt(newMaintenance.estimatedDuration),
+          status: 'scheduled',
+          cost: 0
+        };
+        
+        setMaintenanceLogs(prev => [maintenance, ...prev]);
+      }
+      
+      setNewMaintenance({ assetId: '', type: '', description: '', priority: '', estimatedDuration: '' });
+      setShowAddMaintenance(false);
+      
+      await logActivity(user.username, 'MAINTENANCE_SCHEDULE', `Scheduled maintenance for ${assets.find(a => a.id === parseInt(newMaintenance.assetId))?.name}`);
+    } catch (error) {
+      console.error('Error scheduling maintenance:', error);
+      showError('Failed to schedule maintenance');
+    }
   };
 
   const handleUpdateAssetCondition = (assetId, newCondition) => {
@@ -340,6 +461,30 @@ const MaintenanceDashboard = () => {
       subtitle="Asset Management & Maintenance Tracking"
     >
       <div className="space-y-8">
+        {/* Refresh Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => {
+              loadData();
+              showSuccess('Data refreshed successfully!');
+            }}
+            disabled={loading}
+            className="neumorphic-button p-3 text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh data"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {/* Loading State */}
+        {loading && (
+          <div className="neumorphic-card p-8 text-center">
+            <div className="flex items-center justify-center space-x-4">
+              <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              <span className="text-lg font-semibold text-gray-700">Loading maintenance data...</span>
+            </div>
+          </div>
+        )}
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard

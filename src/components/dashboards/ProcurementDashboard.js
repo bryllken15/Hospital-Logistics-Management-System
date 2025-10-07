@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../shared/Notification';
 import DashboardLayout from '../shared/DashboardLayout';
 import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
 import RFIDScanner from '../shared/RFIDScanner';
+import { procurementService } from '../../services/database/procurement';
+import { inventoryService } from '../../services/database/inventory';
 import { 
   ShoppingCart, 
   Truck, 
@@ -14,15 +17,18 @@ import {
   CheckCircle,
   Clock,
   Users,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const ProcurementDashboard = () => {
-  const { user, logActivity } = useAuth();
+  const { user, logActivity, useDatabase } = useAuth();
+  const { showSuccess, showError, showInfo } = useNotification();
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [newOrder, setNewOrder] = useState({
     supplier: '',
@@ -33,9 +39,96 @@ const ProcurementDashboard = () => {
     rfidCode: ''
   });
 
+  const subscriptions = useRef([]);
+
   useEffect(() => {
-    loadMockData();
-  }, []);
+    loadData();
+    setupRealTimeSubscriptions();
+    
+    return () => {
+      subscriptions.current.forEach(sub => {
+        if (sub && sub.unsubscribe) {
+          sub.unsubscribe();
+        }
+      });
+    };
+  }, [useDatabase]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (useDatabase) {
+        // Load purchase orders
+        const ordersResult = await procurementService.getAllPurchaseOrders();
+        if (ordersResult.error) {
+          console.error('Error loading purchase orders:', ordersResult.error);
+          showError('Failed to load purchase orders');
+        } else {
+          setPurchaseOrders(ordersResult.data || []);
+        }
+
+        // Load suppliers
+        const suppliersResult = await procurementService.getAllSuppliers();
+        if (suppliersResult.error) {
+          console.error('Error loading suppliers:', suppliersResult.error);
+          showError('Failed to load suppliers');
+        } else {
+          setSuppliers(suppliersResult.data || []);
+        }
+
+        // Load deliveries
+        const deliveriesResult = await inventoryService.getAllDeliveries();
+        if (deliveriesResult.error) {
+          console.error('Error loading deliveries:', deliveriesResult.error);
+        } else {
+          setDeliveries(deliveriesResult.data || []);
+        }
+      } else {
+        // Fallback to mock data when database is not available
+        loadMockData();
+      }
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      showError('Failed to load dashboard data');
+      // Fallback to mock data
+      loadMockData();
+    } finally {
+      setLoading(false);
+    }
+  }, [useDatabase, showError]);
+
+  const setupRealTimeSubscriptions = useCallback(() => {
+    if (!useDatabase) return;
+
+    // Clean up existing subscriptions
+    subscriptions.current.forEach(sub => {
+      if (sub && sub.unsubscribe) {
+        sub.unsubscribe();
+      }
+    });
+    subscriptions.current = [];
+
+    // Subscribe to purchase orders
+    const ordersSub = procurementService.subscribeToPurchaseOrders((payload) => {
+      console.log('Purchase orders updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Purchase orders updated in real-time');
+      }
+    });
+
+    // Subscribe to suppliers
+    const suppliersSub = procurementService.subscribeToSuppliers((payload) => {
+      console.log('Suppliers updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Suppliers updated in real-time');
+      }
+    });
+
+    if (ordersSub) subscriptions.current.push(ordersSub);
+    if (suppliersSub) subscriptions.current.push(suppliersSub);
+  }, [useDatabase, loadData, showInfo]);
 
   const loadMockData = () => {
     // Mock purchase orders data
@@ -161,24 +254,54 @@ const ProcurementDashboard = () => {
     }
   };
 
-  const handleCreateOrder = (e) => {
+  const handleCreateOrder = async (e) => {
     e.preventDefault();
-    const order = {
-      id: purchaseOrders.length + 1,
-      ...newOrder,
-      quantity: parseInt(newOrder.quantity),
-      unitPrice: parseFloat(newOrder.unitPrice),
-      totalAmount: parseInt(newOrder.quantity) * parseFloat(newOrder.unitPrice),
-      status: 'pending',
-      orderDate: new Date().toISOString().split('T')[0],
-      expectedDelivery: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    };
-    
-    setPurchaseOrders(prev => [order, ...prev]);
-    setNewOrder({ supplier: '', item: '', quantity: '', unitPrice: '', description: '', rfidCode: '' });
-    setShowCreateOrder(false);
-    
-    logActivity(user.username, 'PURCHASE_ORDER_CREATE', `Created purchase order: ${order.item}`);
+    try {
+      if (useDatabase) {
+        const orderData = {
+          supplier_name: newOrder.supplier,
+          item_name: newOrder.item,
+          quantity: parseInt(newOrder.quantity),
+          unit_price: parseFloat(newOrder.unitPrice),
+          total_amount: parseInt(newOrder.quantity) * parseFloat(newOrder.unitPrice),
+          status: 'pending',
+          order_date: new Date().toISOString().split('T')[0],
+          expected_delivery: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          rfid_code: newOrder.rfidCode,
+          description: newOrder.description,
+          created_by: user.id
+        };
+
+        const result = await procurementService.createPurchaseOrder(orderData);
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        showSuccess('Purchase order created successfully');
+      } else {
+        // Fallback to local state
+        const order = {
+          id: purchaseOrders.length + 1,
+          ...newOrder,
+          quantity: parseInt(newOrder.quantity),
+          unitPrice: parseFloat(newOrder.unitPrice),
+          totalAmount: parseInt(newOrder.quantity) * parseFloat(newOrder.unitPrice),
+          status: 'pending',
+          orderDate: new Date().toISOString().split('T')[0],
+          expectedDelivery: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        };
+        
+        setPurchaseOrders(prev => [order, ...prev]);
+      }
+      
+      setNewOrder({ supplier: '', item: '', quantity: '', unitPrice: '', description: '', rfidCode: '' });
+      setShowCreateOrder(false);
+      
+      await logActivity(user.username, 'PURCHASE_ORDER_CREATE', `Created purchase order: ${newOrder.item}`);
+    } catch (error) {
+      console.error('Error creating purchase order:', error);
+      showError('Failed to create purchase order');
+    }
   };
 
   const orderColumns = [
@@ -287,37 +410,77 @@ const ProcurementDashboard = () => {
       title="Procurement & Sourcing Management" 
       subtitle="Purchase Orders & Supplier Management"
     >
-      <div className="space-y-8">
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard
-            title="Total Orders"
-            value={totalOrders}
-            icon={ShoppingCart}
-            color="blue"
-            subtitle="All time"
-          />
-          <StatCard
-            title="Pending Orders"
-            value={pendingOrders}
-            icon={Clock}
-            color="yellow"
-            subtitle="Awaiting approval"
-          />
-          <StatCard
-            title="Delivered"
-            value={deliveredOrders}
-            icon={CheckCircle}
-            color="green"
-            subtitle="This month"
-          />
-          <StatCard
-            title="Total Spending"
-            value={`$${(totalSpending / 1000).toFixed(0)}K`}
-            icon={DollarSign}
-            color="purple"
-            subtitle="This year"
-          />
+      <div className="space-y-8 animate-page-transition">
+        {/* Refresh Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => {
+              loadData();
+              showSuccess('Data refreshed successfully!');
+            }}
+            disabled={loading}
+            className="neumorphic-button p-3 text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh data"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {/* Loading State */}
+        {loading && (
+          <div className="neumorphic-card p-8 text-center">
+            <div className="flex items-center justify-center space-x-4">
+              <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              <span className="text-lg font-semibold text-gray-700">Loading procurement data...</span>
+            </div>
+          </div>
+        )}
+        {/* Enhanced Statistics Cards Grid */}
+        <div className="grid grid-stats gap-6">
+          <div className="animate-slide-in-left animate-delay-100">
+            <StatCard
+              title="Total Orders"
+              value={totalOrders}
+              icon={ShoppingCart}
+              color="blue"
+              subtitle="All time"
+              delay={100}
+              trend={{ direction: 'up', value: '+15%' }}
+            />
+          </div>
+          <div className="animate-slide-in-left animate-delay-200">
+            <StatCard
+              title="Pending Orders"
+              value={pendingOrders}
+              icon={Clock}
+              color="yellow"
+              subtitle="Awaiting approval"
+              delay={200}
+              trend={{ direction: 'down', value: '-5%' }}
+            />
+          </div>
+          <div className="animate-slide-in-left animate-delay-300">
+            <StatCard
+              title="Delivered"
+              value={deliveredOrders}
+              icon={CheckCircle}
+              color="green"
+              subtitle="This month"
+              delay={300}
+              trend={{ direction: 'up', value: '+12%' }}
+            />
+          </div>
+          <div className="animate-slide-in-left animate-delay-400">
+            <StatCard
+              title="Total Spending"
+              value={`$${(totalSpending / 1000).toFixed(0)}K`}
+              icon={DollarSign}
+              color="purple"
+              subtitle="This year"
+              delay={400}
+              trend={{ direction: 'up', value: '+8%' }}
+            />
+          </div>
         </div>
 
         {/* RFID Scanner and Charts */}

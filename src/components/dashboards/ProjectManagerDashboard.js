@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../shared/Notification';
 import DashboardLayout from '../shared/DashboardLayout';
 import StatCard from '../shared/StatCard';
 import DataTable from '../shared/DataTable';
+import NotificationCenter from '../shared/NotificationCenter';
+import { LoadingSkeleton, DashboardSkeleton } from '../shared/LoadingSkeleton';
+import { ProjectService } from '../../services/database/projects';
+import { WorkflowService } from '../../services/database/workflows';
+import { RealtimeService } from '../../services/database/realtime';
+import { WorkflowEngine } from '../../services/workflow/WorkflowEngine';
+import { NotificationService } from '../../services/notifications/NotificationService';
 import { 
   FolderOpen, 
   Calendar, 
@@ -13,16 +21,36 @@ import {
   Eye,
   Truck,
   Package,
-  TrendingUp
+  TrendingUp,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  UserCheck,
+  FileText,
+  DollarSign,
+  X
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 const ProjectManagerDashboard = () => {
-  const { user, logActivity } = useAuth();
+  const { user, logActivity, useDatabase } = useAuth();
+  const { showSuccess, showError, showInfo, showWorkflow } = useNotification();
+  
+  // State for data
   const [projects, setProjects] = useState([]);
   const [logistics, setLogistics] = useState([]);
   const [staff, setStaff] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // State for UI
   const [showCreateProject, setShowCreateProject] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [selectedApproval, setSelectedApproval] = useState(null);
+  const [approvalComments, setApprovalComments] = useState('');
+  
+  // State for new project form
   const [newProject, setNewProject] = useState({
     name: '',
     description: '',
@@ -32,9 +60,84 @@ const ProjectManagerDashboard = () => {
     department: ''
   });
 
+  // Real-time stats
+  const [realTimeStats, setRealTimeStats] = useState({
+    totalProjects: 0,
+    activeProjects: 0,
+    completedProjects: 0,
+    totalBudget: 0,
+    pendingApprovals: 0
+  });
+
+  // Initialize services
+  const projectService = useRef(new ProjectService());
+  const workflowService = useRef(new WorkflowService());
+  const workflowEngine = useRef(new WorkflowEngine());
+  const realtimeService = useRef(new RealtimeService());
+  const notificationService = useRef(new NotificationService());
+  const subscriptions = useRef([]);
+
   useEffect(() => {
-    loadMockData();
-  }, []);
+    loadData();
+    setupRealTimeSubscriptions();
+    
+    return () => {
+      subscriptions.current.forEach(sub => {
+        if (sub && sub.unsubscribe) {
+          sub.unsubscribe();
+        }
+      });
+    };
+  }, [useDatabase]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      if (useDatabase) {
+        // Load projects from database
+        const projectsResult = await projectService.current.getAllProjects();
+        if (projectsResult.error) {
+          console.error('Error loading projects:', projectsResult.error);
+          showError('Failed to load projects data');
+        } else {
+          setProjects(projectsResult.data || []);
+        }
+
+        // Load pending approvals
+        const approvalsResult = await workflowEngine.current.getUserPendingApprovals(user.id, user.role);
+        if (approvalsResult.error) {
+          console.error('Error loading pending approvals:', approvalsResult.error);
+        } else {
+          setPendingApprovals(approvalsResult.data || []);
+        }
+
+        // Load staff data (mock for now - would need staff service)
+        setStaff([
+          { id: 1, name: 'John Smith', role: 'Employee', department: 'Emergency', availability: 'available' },
+          { id: 2, name: 'Sarah Johnson', role: 'Maintenance', department: 'ICU', availability: 'busy' },
+          { id: 3, name: 'Mike Wilson', role: 'Employee', department: 'Pharmacy', availability: 'available' }
+        ]);
+
+        // Load logistics data (mock for now - would need logistics service)
+        setLogistics([
+          { id: 1, projectId: 1, projectName: 'Emergency Ward Renovation', item: 'Medical Equipment - Ventilators', quantity: 5, status: 'delivered', deliveryDate: '2024-01-15', assignedStaff: 'John Smith', location: 'Emergency Ward - Room 101' },
+          { id: 2, projectId: 1, projectName: 'Emergency Ward Renovation', item: 'Construction Materials - Flooring', quantity: 10, status: 'in_transit', deliveryDate: '2024-01-20', assignedStaff: 'Sarah Johnson', location: 'Emergency Ward - Room 102' }
+        ]);
+      } else {
+        // Fallback to mock data
+        loadMockData();
+      }
+      
+      updateRealTimeStats();
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      showError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  }, [user, useDatabase, showError]);
 
   const loadMockData = () => {
     // Mock projects data
@@ -149,25 +252,168 @@ const ProjectManagerDashboard = () => {
     ]);
   };
 
-  const handleCreateProject = (e) => {
+  const updateRealTimeStats = useCallback(() => {
+    const totalProjects = projects.length;
+    const activeProjects = projects.filter(p => p.status === 'in_progress').length;
+    const completedProjects = projects.filter(p => p.status === 'completed').length;
+    const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
+    const pendingApprovalsCount = pendingApprovals.length;
+    
+    setRealTimeStats({
+      totalProjects,
+      activeProjects,
+      completedProjects,
+      totalBudget,
+      pendingApprovals: pendingApprovalsCount
+    });
+  }, [projects, pendingApprovals]);
+
+  const setupRealTimeSubscriptions = useCallback(() => {
+    if (!useDatabase) return;
+
+    subscriptions.current.forEach(sub => {
+      if (sub && sub.unsubscribe) {
+        sub.unsubscribe();
+      }
+    });
+    subscriptions.current = [];
+
+    // Subscribe to projects changes
+    const projectsSub = realtimeService.current.subscribe('projects', (payload) => {
+      console.log('Projects table updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+        loadData();
+        showInfo('Projects data updated in real-time');
+      }
+    });
+
+    // Subscribe to workflow instances for pending approvals
+    const workflowSub = realtimeService.current.subscribe('workflow_instances', (payload) => {
+      console.log('Workflow instances updated:', payload);
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        loadData();
+        showWorkflow('New workflow approval request received');
+      }
+    });
+
+    // Subscribe to notifications
+    const notificationsSub = realtimeService.current.subscribe('notifications', (payload) => {
+      console.log('Notifications updated:', payload);
+      if (payload.eventType === 'INSERT') {
+        showInfo('New notification received');
+      }
+    });
+
+    if (projectsSub) subscriptions.current.push(projectsSub);
+    if (workflowSub) subscriptions.current.push(workflowSub);
+    if (notificationsSub) subscriptions.current.push(notificationsSub);
+  }, [useDatabase, loadData, showInfo, showWorkflow]);
+
+  const handleCreateProject = async (e) => {
     e.preventDefault();
-    const project = {
-      id: projects.length + 1,
-      ...newProject,
-      budget: parseFloat(newProject.budget),
-      spent: 0,
-      progress: 0,
-      status: 'planning',
-      assignedStaff: []
-    };
-    
-    setProjects(prev => [project, ...prev]);
-    setNewProject({ name: '', description: '', startDate: '', endDate: '', budget: '', department: '' });
-    setShowCreateProject(false);
-    
-    logActivity(user.username, 'PROJECT_CREATE', `Created project: ${project.name}`);
+    try {
+      if (useDatabase) {
+        const projectData = {
+          name: newProject.name,
+          description: newProject.description,
+          start_date: newProject.startDate,
+          end_date: newProject.endDate,
+          budget: parseFloat(newProject.budget),
+          spent: 0,
+          progress: 0,
+          status: 'planning',
+          department: newProject.department,
+          project_manager_id: user.id,
+          created_by: user.id
+        };
+
+        const result = await projectService.current.createProject(projectData);
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        showSuccess('Project created successfully');
+      } else {
+        // Fallback to local state
+        const project = {
+          id: projects.length + 1,
+          ...newProject,
+          budget: parseFloat(newProject.budget),
+          spent: 0,
+          progress: 0,
+          status: 'planning',
+          assignedStaff: []
+        };
+        
+        setProjects(prev => [project, ...prev]);
+        showSuccess('Project created successfully');
+      }
+      
+      setNewProject({ name: '', description: '', startDate: '', endDate: '', budget: '', department: '' });
+      setShowCreateProject(false);
+      
+      await logActivity(user.username, 'PROJECT_CREATE', `Created project: ${newProject.name}`);
+    } catch (error) {
+      console.error('Error creating project:', error);
+      showError('Failed to create project');
+    }
   };
 
+  // Approval workflow functions
+  const handleApproveRequest = async (workflowInstanceId) => {
+    try {
+      const result = await workflowEngine.current.approveStep(
+        workflowInstanceId, 
+        user.id, 
+        approvalComments
+      );
+      
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      showSuccess('Request approved successfully');
+      setShowApprovalModal(false);
+      setSelectedApproval(null);
+      setApprovalComments('');
+      
+      // Reload data to get updated approvals
+      await loadData();
+    } catch (error) {
+      console.error('Error approving request:', error);
+      showError('Failed to approve request');
+    }
+  };
+
+  const handleRejectRequest = async (workflowInstanceId, reason) => {
+    try {
+      const result = await workflowEngine.current.rejectWorkflow(
+        workflowInstanceId, 
+        user.id, 
+        reason
+      );
+      
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      showSuccess('Request rejected successfully');
+      setShowApprovalModal(false);
+      setSelectedApproval(null);
+      setApprovalComments('');
+      
+      // Reload data to get updated approvals
+      await loadData();
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      showError('Failed to reject request');
+    }
+  };
+
+  const openApprovalModal = (approval) => {
+    setSelectedApproval(approval);
+    setShowApprovalModal(true);
+  };
 
   const projectColumns = [
     { key: 'name', header: 'Project Name' },
@@ -261,11 +507,11 @@ const ProjectManagerDashboard = () => {
     </div>
   );
 
-  // Calculate statistics
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === 'in_progress').length;
-  const completedProjects = projects.filter(p => p.status === 'completed').length;
-  const totalBudget = projects.reduce((sum, project) => sum + project.budget, 0);
+  // Calculate statistics (use real-time stats if available)
+  const totalProjects = realTimeStats.totalProjects || projects.length;
+  const activeProjects = realTimeStats.activeProjects || projects.filter(p => p.status === 'in_progress').length;
+  const completedProjects = realTimeStats.completedProjects || projects.filter(p => p.status === 'completed').length;
+  const totalBudget = realTimeStats.totalBudget || projects.reduce((sum, project) => sum + project.budget, 0);
 
   // Chart data
   const progressData = projects.map(project => ({
@@ -282,10 +528,15 @@ const ProjectManagerDashboard = () => {
     { month: 'Jun', budget: 90000, spent: 62000 }
   ];
 
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <DashboardLayout 
       title="Project Logistics Tracker" 
       subtitle="Project Management & Resource Coordination"
+      rightContent={<NotificationCenter />}
     >
       <div className="space-y-8">
         {/* Statistics Cards */}
@@ -417,6 +668,76 @@ const ProjectManagerDashboard = () => {
           </div>
         </div>
 
+        {/* Pending Approvals Section */}
+        {useDatabase && pendingApprovals.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Pending Approvals</h3>
+              <span className="bg-red-100 text-red-800 text-sm font-medium px-2.5 py-0.5 rounded-full">
+                {pendingApprovals.length} pending
+              </span>
+            </div>
+            <div className="space-y-3">
+              {pendingApprovals.slice(0, 5).map((approval) => (
+                <div key={approval.id} className="flex items-center justify-between p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-shrink-0">
+                      <Clock className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {approval.request_type.replace('_', ' ').toUpperCase()} Request
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Step {approval.current_step} of {approval.total_steps} • 
+                        Initiated by {approval.initiator?.full_name || 'Unknown'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => openApprovalModal(approval)}
+                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Review
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {pendingApprovals.length > 5 && (
+                <p className="text-sm text-gray-500 text-center">
+                  And {pendingApprovals.length - 5} more pending approvals...
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Real-time Status Indicator */}
+        {useDatabase && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 rounded-full bg-green-100 text-green-600">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Real-time Database Connection
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Live updates enabled • {realTimeStats.pendingApprovals} pending approvals
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-gray-600">Live</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Projects */}
@@ -543,6 +864,70 @@ const ProjectManagerDashboard = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Approval Modal */}
+        {showApprovalModal && selectedApproval && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Review Approval Request
+                </h3>
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Request Type:</strong> {selectedApproval.request_type.replace('_', ' ').toUpperCase()}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Step:</strong> {selectedApproval.current_step} of {selectedApproval.total_steps}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Initiated by:</strong> {selectedApproval.initiator?.full_name || 'Unknown'}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Initiated at:</strong> {new Date(selectedApproval.initiated_at).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Comments (Optional)
+                </label>
+                <textarea
+                  value={approvalComments}
+                  onChange={(e) => setApprovalComments(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows="3"
+                  placeholder="Add any comments about this approval..."
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => handleRejectRequest(selectedApproval.id, approvalComments || 'No reason provided')}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <XCircle className="h-4 w-4 inline mr-1" />
+                  Reject
+                </button>
+                <button
+                  onClick={() => handleApproveRequest(selectedApproval.id)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <CheckCircle2 className="h-4 w-4 inline mr-1" />
+                  Approve
+                </button>
+              </div>
             </div>
           </div>
         )}

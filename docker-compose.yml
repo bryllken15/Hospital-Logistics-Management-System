@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # React Application
+  logistics-app:
+    build: .
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_SUPABASE_URL=${SUPABASE_URL}
+      - REACT_APP_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - REACT_APP_ENVIRONMENT=production
+    depends_on:
+      - supabase-db
+    networks:
+      - logistics-network
+
+  # Local Supabase Database (PostgreSQL)
+  supabase-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: logistics_hospital
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - logistics-network
+
+  # Supabase Studio (Database Management UI)
+  supabase-studio:
+    image: supabase/studio:latest
+    ports:
+      - "54323:3000"
+    environment:
+      SUPABASE_URL: http://supabase-db:5432
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    depends_on:
+      - supabase-db
+    networks:
+      - logistics-network
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - logistics-network
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - logistics-app
+    networks:
+      - logistics-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  logistics-network:
+    driver: bridge

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import { CheckCircle, XCircle, Info, AlertTriangle, X, Bell, Workflow, FileText, Package } from 'lucide-react';
 
 const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
   const [isVisible, setIsVisible] = useState(true);
@@ -27,6 +27,14 @@ const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
         return <XCircle className="h-5 w-5 text-red-500" />;
       case 'warning':
         return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
+      case 'workflow':
+        return <Workflow className="h-5 w-5 text-blue-500" />;
+      case 'announcement':
+        return <Bell className="h-5 w-5 text-purple-500" />;
+      case 'project':
+        return <FileText className="h-5 w-5 text-indigo-500" />;
+      case 'inventory':
+        return <Package className="h-5 w-5 text-orange-500" />;
       default:
         return <Info className="h-5 w-5 text-blue-500" />;
     }
@@ -40,6 +48,14 @@ const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
         return 'bg-red-50 border-red-200';
       case 'warning':
         return 'bg-yellow-50 border-yellow-200';
+      case 'workflow':
+        return 'bg-blue-50 border-blue-200';
+      case 'announcement':
+        return 'bg-purple-50 border-purple-200';
+      case 'project':
+        return 'bg-indigo-50 border-indigo-200';
+      case 'inventory':
+        return 'bg-orange-50 border-orange-200';
       default:
         return 'bg-blue-50 border-blue-200';
     }
@@ -53,6 +69,14 @@ const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
         return 'text-red-800';
       case 'warning':
         return 'text-yellow-800';
+      case 'workflow':
+        return 'text-blue-800';
+      case 'announcement':
+        return 'text-purple-800';
+      case 'project':
+        return 'text-indigo-800';
+      case 'inventory':
+        return 'text-orange-800';
       default:
         return 'text-blue-800';
     }
@@ -89,8 +113,6 @@ const Notification = ({ message, type = 'info', duration = 5000, onClose }) => {
 };
 
 // Notification Context
-import { createContext, useContext } from 'react';
-
 const NotificationContext = createContext();
 
 export const useNotification = () => {
@@ -104,33 +126,58 @@ export const useNotification = () => {
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
-  const showNotification = (message, type = 'info', duration = 5000) => {
+  const showNotification = (message, type = 'info', duration = 5000, title = null) => {
     const id = Date.now() + Math.random();
-    setNotifications(prev => [...prev, { id, message, type, duration }]);
+    setNotifications(prev => [...prev, { id, message, type, duration, title }]);
   };
 
   const removeNotification = (id) => {
     setNotifications(prev => prev.filter(notification => notification.id !== id));
   };
 
-  const showSuccess = (message, duration = 5000) => {
-    showNotification(message, 'success', duration);
+  const showSuccess = (message, duration = 5000, title = 'Success') => {
+    showNotification(message, 'success', duration, title);
   };
 
-  const showError = (message, duration = 5000) => {
-    showNotification(message, 'error', duration);
+  const showError = (message, duration = 5000, title = 'Error') => {
+    showNotification(message, 'error', duration, title);
   };
 
-  const showWarning = (message, duration = 5000) => {
-    showNotification(message, 'warning', duration);
+  const showWarning = (message, duration = 5000, title = 'Warning') => {
+    showNotification(message, 'warning', duration, title);
   };
 
-  const showInfo = (message, duration = 5000) => {
-    showNotification(message, 'info', duration);
+  const showInfo = (message, duration = 5000, title = 'Information') => {
+    showNotification(message, 'info', duration, title);
+  };
+
+  const showWorkflow = (message, duration = 5000, title = 'Workflow Update') => {
+    showNotification(message, 'workflow', duration, title);
+  };
+
+  const showAnnouncement = (message, duration = 5000, title = 'Announcement') => {
+    showNotification(message, 'announcement', duration, title);
+  };
+
+  const showProject = (message, duration = 5000, title = 'Project Update') => {
+    showNotification(message, 'project', duration, title);
+  };
+
+  const showInventory = (message, duration = 5000, title = 'Inventory Update') => {
+    showNotification(message, 'inventory', duration, title);
   };
 
   return (
-    <NotificationContext.Provider value={{ showSuccess, showError, showWarning, showInfo }}>
+    <NotificationContext.Provider value={{ 
+      showSuccess, 
+      showError, 
+      showWarning, 
+      showInfo, 
+      showWorkflow, 
+      showAnnouncement, 
+      showProject, 
+      showInventory 
+    }}>
       {children}
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {notifications.map(notification => (
